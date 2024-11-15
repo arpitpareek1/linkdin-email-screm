@@ -32,7 +32,7 @@ If Chromium is not already installed, run the following script to set it up:
 ```python 
 python setup.py
 ```
-⚠️ This script only works on Windows as macOS support isn’t available (can't afford a Mac 😅).
+⚠️ This script only works on Windows as macOS support isn’t available (can't afford a Mac 😅). Please create one for setup.
 
 ### 4️⃣ Run the Script
 Once setup is complete, execute the main script:
