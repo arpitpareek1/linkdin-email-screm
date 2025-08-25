@@ -7,3 +7,7 @@ filtered_emails.json
 final-output.txt
 LICENSE.chromedriver
 mail_cookie.json
+cookies_*
+chromedriver
+noukrisnapshort.json
+naukri-contacts.json
