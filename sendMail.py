@@ -1,141 +1,116 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-import time
 import os
-import json
+import sys
+import time
+import ssl
+import smtplib
+from typing import List
 
-import config
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate, make_msgid
+from email.mime.base import MIMEBase
+from email import encoders
+from emailcred import email, password
 
-email = config.email
-password = config.password
-to_recipient= "your email"
-subject_text="testing.."
-mail_msg="more testing...."
 
-def send_mail():
+SUBJECT ="Application for Full Stack Developer Position"
+TEXT = """
+    Hello,
+    I hope you are doing well. I am writing to express my interest in the Full Stack Developer position at your company. 
+    With over 3 years of experience in building scalable web and IoT applications, I am eager to bring my expertise in React, Node.js, Python, and AWS to your team.
+    I can join immediately.
+    My technical skills include:
+        Frontend: React, Ionic, TypeScript
+        Backend: Node.js, Flask, Django, Laravel
+        Database: PostgreSQL, MySQL, Redis
+        Cloud & DevOps: AWS (EC2, S3, CodeCommit), DigitalOcean
+        IoT: MQTT, Arduino
+    I am passionate about delivering high-performance, scalable applications and would love the opportunity to contribute to your company's innovative projects. 
+    I have attached my resume for your review. Please let me know if we can discuss this opportunity further.
 
-    # Click on "Compose" button
-    compose_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//div[text()="Compose"]'))
-    )
-    compose_button.click()
+    Looking forward to your response.
 
-    # Wait briefly for compose window to open
-    time.sleep(0.5)
+    Best regards,
+    Arpit Pareek
+"""
+ATTACHMENT = 'Arpit_Pareek_Resume_FSD.docx'
+DELAY = 1.0
+
+def read_recipients() -> List[str]:
+    """Read recipients exclusively from emails.txt (one email per line)."""
+    default_file = "emails.txt"
+    if not os.path.isfile(default_file):
+        print(f"Recipients file not found: {default_file}")
+        sys.exit(1)
+    recipients: List[str] = []
+    with open(default_file, "r", encoding="utf-8") as f:
+        for line in f:
+            addr = line.strip()
+            if addr:
+                recipients.append(addr)
+    seen = set()
+    unique: List[str] = []
+    for r in recipients:
+        if r not in seen:
+            seen.add(r)
+            unique.append(r)
+    return unique
+
+
+def build_message(sender: str, recipient: str, subject: str, text: str | None, attachment: str | None) -> MIMEMultipart:
+    msg = MIMEMultipart("alternative")
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid()
+    if text:
+        msg.attach(MIMEText(text, "plain", _charset="utf-8"))
+    if attachment:
+        try:
+            filename = os.path.basename(attachment)
+            with open(attachment, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename=\"{filename}\"")
+            msg.attach(part)
+        except FileNotFoundError:
+            print(f"Attachment not found, skipping: {attachment}")
+    return msg
+
+
+def main():
+    recipients = read_recipients()
+
+    # Establish SMTP connection
+    context = ssl.create_default_context()
+    server = smtplib.SMTP("smtp.gmail.com", 587)
     try:
-        # Click on "Recipients" (To) field
-        to_field = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//div[text()="Recipients"]'))
-        )
-        to_field.click()
-    except Exception:
-        print("no button Recipients found")
-    # Enter recipient email in "To" field
-    to_input = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located(
-            (By.XPATH, '//textarea[@aria-label="To recipients"]')
-        )
-    )
-    to_input.send_keys(to_recipient)
+        sender = email
+        app_password = password
+        server.ehlo()
+        server.starttls(context=context)
+        server.ehlo()
+        server.login(sender, app_password)
 
-    # Enter subject
-    subject_input = driver.find_element(By.NAME, "subjectbox")
-    subject_input.send_keys(subject_text)
-
-    # Enter email body in "Message Body"
-    message_body = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, '//div[@aria-label="Message Body"]'))
-    )
-    message_body.send_keys(mail_msg)
-
-    # Click on "Send" button
-    send_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, '//div[text()="Send"]'))
-    )
-    send_button.click()
-
-    print("Email sent successfully!")
-
-def isLogin():
-    return os.path.isfile(os.path.join(os.getcwd(), "mail_cookie.json"))
+        for idx, rcpt in enumerate(recipients, start=1):
+            print(f"[{idx}/{len(recipients)}] Sending to {rcpt}")
+            msg = build_message(sender, rcpt, SUBJECT, TEXT, ATTACHMENT)
+            try:
+                server.sendmail(sender, [rcpt], msg.as_string())
+                print(f"[{idx}/{len(recipients)}] Sent to {rcpt}")
+            except Exception as e:
+                print(f"[{idx}/{len(recipients)}] Failed to send to {rcpt}: {e}")
+            time.sleep(max(0.0, DELAY))
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
 
 
-def autoLogin():
-    with open("mail_cookie.json", "r", encoding="utf-8") as read_file:
-        cookies = json.load(read_file)
-        for cookie in cookies:
-            driver.add_cookie(cookie)
+if __name__ == "__main__":
+    main()
 
-    driver.refresh()
-
-
-driver = webdriver.Chrome()
-try:
-    # Open Gmail login page
-    driver.get("https://mail.google.com/mail/u/1/#inbox")
-
-    # Wait until the email input field is present and enter the email
-    email_input = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="email"]'))
-    )
-    email_input.send_keys(email)
-
-    # Click on the Next button (div with id 'identifierNext')
-    next_button = driver.find_element(By.ID, "identifierNext")
-    next_button.click()
-    time.sleep(5)
-    # Wait for password input to appear, then enter password
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="password"]'))
-    )
-    password_input = driver.find_element(By.CSS_SELECTOR, 'input[type="password"]')
-    password_input.send_keys(password)
-
-    # Click on the Next button (div with id 'passwordNext')
-    next_button = driver.find_element(By.ID, "passwordNext")
-    next_button.click()
-
-    # Wait for a few seconds to load the inbox
-    time.sleep(5)
-
-    # Check for any optional buttons and handle them
-    try:
-        # If there's a "Cancel" button, click it
-        cancel_button = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable(
-                (By.XPATH, '//span[text()="Cancel"]/ancestor::button')
-            )
-        )
-        cancel_button.click()
-        time.sleep(5)
-        print("Clicked 'Cancel' button.")
-    except Exception:
-        print("No 'Cancel' button found.")
-
-    try:
-        # If there's a "Not now" button, click it
-        not_now_button = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable(
-                (By.XPATH, '//span[text()="Not now"]/ancestor::button')
-            )
-        )
-        not_now_button.click()
-        time.sleep(5)
-        print("Clicked 'Not now' button.")
-    except Exception:
-        print("No 'Not now' button found.")
-
-    print("Login process completed.")
-except Exception:
-    print("error")
-
-bra_cookies = driver.get_cookies()
-with open("mail_cookie.json", "w", encoding="utf-8") as file:
-    json.dump(bra_cookies, file)
-
-send_mail()
+ 

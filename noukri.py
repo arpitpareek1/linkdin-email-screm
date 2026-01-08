@@ -17,11 +17,11 @@ from selenium.webdriver.support import expected_conditions as EC
 # ----------------------------
 BASE_URL = "https://www.naukri.com/"
 SEARCH_URL = (
-    "https://www.naukri.com/node-js-developer-react-js-developer-jobs-in-pune?k=node%20js%20developer%2C%20react%20js%20developer&l=pune&experience=3&nignbevent_src=jobsearchDeskGNB"
+    "https://www.naukri.com/react-dot-js-react-developer-node-dot-js-jobs?k=react.js%2C%20react%20developer%2C%20node.js&nignbevent_src=jobsearchDeskGNB&experience=3&wfhType=2"
 )
 SNAPSHOT_PATH = "noukrisnapshort.json"  # cookies + storages provided by you
 OUTPUT_FILE = "naukri-contacts.json"
-MAX_PAGES = int(os.getenv("MAX_PAGES", "1000"))  # cap pages; override via env MAX_PAGES
+MAX_PAGES = int(os.getenv("MAX_PAGES", "1"))  # cap pages; override via env MAX_PAGES
 
 # ----------------------------
 # Driver
@@ -30,10 +30,48 @@ service = Service()
 options = webdriver.ChromeOptions()
 options.add_argument("--start-maximized")
 options.add_argument("--disable-blink-features=AutomationControlled")
+
+# Try to appear more like a regular browser
+options.add_experimental_option("excludeSwitches", ["enable-automation"])  # hide 'Chrome is being controlled...'
+options.add_experimental_option("useAutomationExtension", False)
+
+# Realistic user agent
+options.add_argument(
+    "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+# System stability and minor fingerprint tweaks
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-gpu")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--lang=en-US,en;q=0.9")
+
 # dont load images
-options.add_argument("--disable-image-loading")
+options.add_experimental_option(
+    "prefs",
+    {
+        "profile.managed_default_content_settings.images": 2,
+    },
+)
 # options.add_argument("--headless=new")  # optional
 driver = webdriver.Chrome(service=service, options=options)
+
+# Hide webdriver flag early on every page
+try:
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                // Spoof plugins and languages minimally
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
+            """
+        },
+    )
+except Exception:
+    pass
 
 # ----------------------------
 # Snapshot helpers (cookies + storage)
@@ -161,16 +199,22 @@ def extract_contacts_from_job(url: str) -> Dict[str, Any]:
         text_blob = " ".join([n.text for n in desc_nodes]) if desc_nodes else driver.page_source
 
         emails = set(EMAIL_RE.findall(text_blob))
-        # phones = set(PHONE_RE.findall(text_blob))
-
         data["emails"] = sorted(emails)
-        # PHONE_RE may capture tuple groups sometimes; normalize to strings
-        # flat_phones = set()
-        # for ph in phones:
-        #     if isinstance(ph, tuple):
-        #         ph = "".join(ph)
-        #     flat_phones.add(re.sub(r"\s+", " ", ph).strip())
-        # data["phones"] = sorted(flat_phones)
+
+        # apply for the job 
+        try:
+            # Wait briefly for an apply button if present, then click
+            apply_btn = WebDriverWait(driver, 1).until(
+                EC.element_to_be_clickable((By.ID, "apply-button"))
+            )
+            apply_btn.click()
+            if(apply_btn):
+                print("apply button clicked")
+                time.sleep(1)
+        except Exception:
+            # If no button or not clickable, just continue
+            pass
+        
     except Exception:
         pass
     return data

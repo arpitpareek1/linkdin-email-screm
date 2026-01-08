@@ -10,6 +10,7 @@ import config
 import json
 import os
 from typing import Optional
+from llm_provider import llm_answer
 
 # ----------------------------
 # Constants / Configuration
@@ -25,8 +26,10 @@ BATCH_SIZE = 10  # switch account after every 10 profile visits
 service = Service()
 options = webdriver.ChromeOptions()
 options.add_argument("--start-maximized")
+options.add_argument("--disable-blink-features=AutomationControlled")
 # # options.add_argument("--headless=new")
-driver = webdriver.Chrome(service=service, options=options)
+# Defer driver creation until after LLM check passes
+driver = None
 
 # ----------------------------
 # Global state containers
@@ -402,9 +405,42 @@ def process_profiles_and_write(urls: list, output_path: str, account_index: Opti
 
 
 # ----------------------------
+# LLM readiness check
+# ----------------------------
+def check_llm_ready() -> bool:
+    try:
+        expected_name = (os.getenv("USER_NAME") or input("Enter your name to verify LLM is working: ").strip())
+        if not expected_name:
+            print("No name provided; skipping LLM check.")
+            return True
+        prompt = f"My name is {expected_name}. What is my name? Answer only the name."
+        ans = (llm_answer(prompt, "text") or "").strip()
+        # Normalize for comparison
+        if ans.lower() == expected_name.strip().lower():
+            print("LLM check passed.")
+            return True
+        print(f"LLM check failed. Expected '{expected_name}', got '{ans}'.")
+        return False
+    except Exception as e:
+        print(f"LLM check encountered an error: {e}")
+        return False
+
+
+# ----------------------------
 # Main entry point
 # ----------------------------
 def main():
+    # Pre-flight: verify LLM is responding before starting Selenium workflow
+    if not check_llm_ready():
+        try:
+            if driver:
+                driver.quit()
+        except Exception:
+            pass
+        return
+    # Initialize driver only after LLM readiness is confirmed
+    global driver
+    driver = webdriver.Chrome(service=service, options=options)
     # Step 1: Use account 0 to collect all profile URLs
     print("Activating account #0 to collect profile URLs...")
     switch_account(0)
